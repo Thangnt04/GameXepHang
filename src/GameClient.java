@@ -242,7 +242,10 @@ public class GameClient extends JFrame {
         }
 
         public void updateLeaderboard(String leaderboard) {
-            leaderboardArea.setText(leaderboard.replace("LEADERBOARD:", ""));
+//            leaderboardArea.setText(leaderboard.replace("LEADERBOARD:", ""));
+            String formattedText = leaderboard.replace(";;", "\n");
+
+            leaderboardArea.setText(formattedText);
         }
 
         private void challengeSelectedPlayer() {
@@ -311,7 +314,7 @@ public class GameClient extends JFrame {
             JPanel bottomPanel = new JPanel(new FlowLayout());
             btnSubmit = new JButton("Gửi Đơn Hàng");
             btnResetTray = new JButton("Xếp Lại");
-            btnExit = new JButton("Thoát");
+            btnExit = new JButton("Bỏ cuộc");
             bottomPanel.add(btnSubmit);
             bottomPanel.add(btnResetTray);
             bottomPanel.add(btnExit);
@@ -400,14 +403,23 @@ public class GameClient extends JFrame {
                 currentPackingTray.clear();
                 updatePackingTrayUI();
             } else if (e.getSource() == btnExit) {
+//                gameTimer.stop();
+//                int choice = JOptionPane.showConfirmDialog(this, "Bạn có chắc muốn thoát?", "Xác nhận", JOptionPane.YES_NO_OPTION);
+//                if (choice == JOptionPane.YES_OPTION) {
+//                    client.sendMessageToServer("EXIT_GAME");
+//                    client.showPanel("LOBBY");
+//                } else if (timeLeft > 0) {
+//                    gameTimer.start();
+//                }
+
+                // Dừng timer
                 gameTimer.stop();
-                int choice = JOptionPane.showConfirmDialog(this, "Bạn có chắc muốn thoát?", "Xác nhận", JOptionPane.YES_NO_OPTION);
-                if (choice == JOptionPane.YES_OPTION) {
-                    client.sendMessageToServer("EXIT_GAME");
-                    client.showPanel("LOBBY");
-                } else if (timeLeft > 0) {
-                    gameTimer.start();
-                }
+                // Vô hiệu hóa các nút để tránh bấm nhiều lần
+                btnSubmit.setEnabled(false);
+                btnExit.setEnabled(false);
+                btnResetTray.setEnabled(false);
+                // Gửi lệnh Bỏ cuộc (FORFEIT) mới.
+                client.sendMessageToServer("FORFEIT");
             }
         }
     }

@@ -101,6 +101,11 @@ public class ClientHandler implements Runnable {
                     currentGameSession.playerExited(this);
                 }
                 break;
+            case "FORFEIT":
+                if (inGame && currentGameSession != null) {
+                    currentGameSession.playerForfeited(this);
+                }
+                break;
             // (LOGOUT sẽ được xử lý khi client đóng socket)
         }
     }
@@ -176,7 +181,7 @@ public class ClientHandler implements Runnable {
         try {
             // Thông báo cho game session trước (nếu đang chơi)
             if (inGame && currentGameSession != null) {
-                currentGameSession.playerExited(this);
+                currentGameSession.playerForfeited(this);
                 currentGameSession = null;
                 inGame = false;
             }

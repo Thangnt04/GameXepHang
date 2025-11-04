@@ -3,9 +3,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DatabaseDAO {
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/game_xep_hang";
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/gamexephang";
     private static final String DB_USER = "root";
-    private static final String DB_PASSWORD = "";
+    private static final String DB_PASSWORD = "thangdc2004";
 
     // Inner class cho User với stats mới
     public static class User {

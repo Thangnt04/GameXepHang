@@ -14,6 +14,8 @@ public class Server {
     private static final int PORT = 12345;
     // GIỮ PRIVATE
     private Map<String, ClientHandler> onlineUsers = new ConcurrentHashMap<>();
+    // Mapping user -> GameSession để dọn dẹp trạng thái BUSY bị kẹt
+    private final Map<String, GameSession> sessionsByUser = new ConcurrentHashMap<>();
 
     // Đối tượng DAO để tương tác CSDL
     protected DatabaseDAO databaseDAO;
@@ -53,29 +55,116 @@ public class Server {
     // Xóa user khỏi danh sách online khi ngắt kết nối
     public void userLoggedOut(String username) {
         if (username != null) {
-            onlineUsers.remove(username);
+            // Lấy handler trước khi xóa khỏi map
+            ClientHandler leaving = onlineUsers.remove(username);
+
+            // Nếu user đang trong một session -> reset cả 2 bên và xóa mapping
+            GameSession s = sessionsByUser.remove(username);
+            if (s != null) {
+                ClientHandler p1 = s.getPlayer1();
+                ClientHandler p2 = s.getPlayer2();
+
+                if (p1 != null) {
+                    p1.setInGame(false, null);
+                    sessionsByUser.remove(p1.getUsername());
+                }
+                if (p2 != null) {
+                    p2.setInGame(false, null);
+                    sessionsByUser.remove(p2.getUsername());
+                    if (onlineUsers.containsKey(p2.getUsername())) {
+                        p2.sendMessage("SERVER_MSG:Đối thủ đã rời trận. Bạn đã quay về sảnh.");
+                    }
+                }
+            } else if (leaving != null) {
+                // Không có session nào, đảm bảo cờ được trả về IDLE
+                leaving.setInGame(false, null);
+            }
+
             System.out.println(username + " logged out.");
             broadcastOnlineList();
+            broadcastLeaderboard();
         }
     }
 
-    // Gửi danh sách online - CẢI THIỆN FORMAT
+    // Gửi danh sách lobby: hiển thị TẤT CẢ người chơi + trạng thái ONLINE/OFFLINE và IDLE/BUSY
     public synchronized void broadcastOnlineList() {
-        // Format: ONLINE_LIST:user1(5W-2D-1L):ONLINE:IDLE,user2(3W-1D-2L):ONLINE:BUSY
+        // Trước khi build danh sách, dọn các session "mồ côi" để tránh kẹt BUSY
+        cleanupStaleSessions();
+
+        // Format: ONLINE_LIST:username(5W-2D-1L):ONLINE:IDLE,username2(...):OFFLINE:IDLE,...
         StringBuilder userListMessage = new StringBuilder("ONLINE_LIST:");
-        for (ClientHandler handler : onlineUsers.values()) {
-            if (handler.getUsername() != null) {
-                String status = handler.isInGame() ? "BUSY" : "IDLE";
-                userListMessage.append(handler.getUsername())
-                        .append("(")
-                        .append(handler.getTotalWins()).append("W-")
-                        .append(handler.getTotalDraws()).append("D-")
-                        .append(handler.getTotalLosses()).append("L")
-                        .append("):ONLINE:").append(status)
+        try {
+//            List<DatabaseDAO.User> allUsers = databaseDAO.getLeaderboard(); // View đã hiển thị tất cả users
+//            for (DatabaseDAO.User u : allUsers) {
+//                ClientHandler h = onlineUsers.get(u.username);
+//                boolean online = (h != null);
+//                String presence = online ? "ONLINE" : "OFFLINE";
+//                String activity = (online && h.isInGame()) ? "BUSY" : "IDLE";
+//                userListMessage
+//                        .append(u.username)
+//                        .append("(").append(u.totalWins).append("W-")
+//                        .append(u.totalDraws).append("D-")
+//                        .append(u.totalLosses).append("L")
+//                        .append("):").append(presence).append(":").append(activity)
+//                        .append(",");
+            List<DatabaseDAO.User> allUsers = databaseDAO.getLeaderboard(); // 1. Lấy danh sách (đang sắp xếp theo điểm)
+
+            // Sắp xếp lại danh sách allUsers theo 3 tiêu chí
+            allUsers.sort((u1, u2) -> {
+                ClientHandler h1 = onlineUsers.get(u1.username);
+                ClientHandler h2 = onlineUsers.get(u2.username);
+                boolean online1 = (h1 != null);
+                boolean online2 = (h2 != null);
+                boolean busy1 = (online1 && h1.isInGame());
+                boolean busy2 = (online2 && h2.isInGame());
+
+                // Tiêu chí 1: Ưu tiên Online (Online đứng trước Offline)
+                if (online1 && !online2) return -1;
+                if (!online1 && online2) return 1;
+
+                // Tiêu chí 2: Ưu tiên Rảnh (Idle đứng trước Busy)
+                // (Chỉ áp dụng khi cả hai cùng online hoặc cùng offline)
+                if (online1 && online2) {
+                    if (!busy1 && busy2) return -1; // u1 (Idle) < u2 (Busy)
+                    if (busy1 && !busy2) return 1;  // u1 (Busy) > u2 (Idle)
+                }
+
+                // Tiêu chí 3: Sắp xếp theo tên A-Z
+                return u1.username.compareToIgnoreCase(u2.username);
+            });
+
+
+            // 3. Xây dựng chuỗi tin nhắn từ danh sách ĐÃ ĐƯỢC SẮP XẾP MỚI
+            for (DatabaseDAO.User u : allUsers) {
+                ClientHandler h = onlineUsers.get(u.username);
+                boolean online = (h != null);
+                String presence = online ? "ONLINE" : "OFFLINE";
+                String activity = (online && h.isInGame()) ? "BUSY" : "IDLE";
+                userListMessage
+                        .append(u.username)
+                        .append("(").append(u.totalWins).append("W-")
+                        .append(u.totalDraws).append("D-")
+                        .append(u.totalLosses).append("L")
+                        .append("):").append(presence).append(":").append(activity)
                         .append(",");
             }
+        } catch (Exception e) {
+            // Fallback: chỉ hiển thị online nếu DB lỗi
+            for (ClientHandler handler : onlineUsers.values()) {
+                if (handler.getUsername() != null) {
+                    String status = handler.isInGame() ? "BUSY" : "IDLE";
+                    userListMessage.append(handler.getUsername())
+                            .append("(")
+                            .append(handler.getTotalWins()).append("W-")
+                            .append(handler.getTotalDraws()).append("D-")
+                            .append(handler.getTotalLosses()).append("L")
+                            .append("):ONLINE:").append(status)
+                            .append(",");
+                }
+            }
         }
-        if (userListMessage.length() > 12) {
+
+        if (userListMessage.length() > "ONLINE_LIST:".length()) {
             userListMessage.deleteCharAt(userListMessage.length() - 1);
         }
 
@@ -95,7 +184,8 @@ public class Server {
                     .append(" (").append(user.getPoints()).append(" pts")
                     .append(" | ").append(user.totalWins).append("W-")
                     .append(user.totalDraws).append("D-")
-                    .append(user.totalLosses).append("L)\n");
+                    .append(user.totalLosses).append("L)");
+            leaderboardMessage.append(";;");
         }
 
         for (ClientHandler handler : onlineUsers.values()) {
@@ -162,6 +252,10 @@ public class Server {
             challengerHandler.setInGame(true, gameSession);
             opponentHandler.setInGame(true, gameSession);
 
+            // Lưu mapping session cho việc dọn dẹp sau này
+            sessionsByUser.put(challengerName, gameSession);
+            sessionsByUser.put(opponentName, gameSession);
+
             // Bắt đầu ván đầu tiên
             gameSession.startNewRound();
 
@@ -177,24 +271,57 @@ public class Server {
     // Khi một game kết thúc - CẢI THIỆN
     public synchronized void gameSessionEnded(GameSession session) {
         try {
-            // Đặt lại trạng thái "Rảnh" cho cả 2 người chơi
             ClientHandler p1 = session.getPlayer1();
             ClientHandler p2 = session.getPlayer2();
-            
+
             if (p1 != null && onlineUsers.containsKey(p1.getUsername())) {
                 p1.setInGame(false, null);
+                sessionsByUser.remove(p1.getUsername());
             }
             if (p2 != null && onlineUsers.containsKey(p2.getUsername())) {
                 p2.setInGame(false, null);
+                sessionsByUser.remove(p2.getUsername());
             }
-            
+
             System.out.println("A game session has ended.");
-            
-            // Cập nhật lại danh sách và bảng xếp hạng
+
             broadcastOnlineList();
             broadcastLeaderboard();
         } catch (Exception e) {
             System.out.println("Error when ending game session: " + e.getMessage());
+        }
+    }
+
+    // Dọn dẹp session “mồ côi”, tránh kẹt BUSY khi 1 bên out hoặc session mất tham chiếu
+    private void cleanupStaleSessions() {
+        try {
+            // Duyệt theo user đang map session
+            for (Map.Entry<String, GameSession> entry : sessionsByUser.entrySet()) {
+                String uname = entry.getKey();
+                GameSession s = entry.getValue();
+                if (s == null) {
+                    sessionsByUser.remove(uname);
+                    continue;
+                }
+                ClientHandler p1 = s.getPlayer1();
+                ClientHandler p2 = s.getPlayer2();
+
+                boolean p1Online = p1 != null && onlineUsers.getOrDefault(p1.getUsername(), null) == p1;
+                boolean p2Online = p2 != null && onlineUsers.getOrDefault(p2.getUsername(), null) == p2;
+
+                // Nếu một trong hai offline hoặc mất tham chiếu -> reset cả hai
+                if (!p1Online || !p2Online || p1 == null || p2 == null) {
+                    if (p1 != null) {
+                        p1.setInGame(false, null);
+                        sessionsByUser.remove(p1.getUsername());
+                    }
+                    if (p2 != null) {
+                        p2.setInGame(false, null);
+                        sessionsByUser.remove(p2.getUsername());
+                    }
+                }
+            }
+        } catch (Exception ignored) {
         }
     }
 

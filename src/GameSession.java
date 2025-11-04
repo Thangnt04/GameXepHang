@@ -316,9 +316,6 @@ public class GameSession {
         ClientHandler p1 = player1;
         ClientHandler p2 = player2;
 
-        // Đánh dấu null ngay để tránh xử lý lại
-        player1 = null;
-        player2 = null;
 
         // Gửi thông báo cho đối thủ
         try {
@@ -332,6 +329,89 @@ public class GameSession {
         }
 
         // Báo cho Server biết để cập nhật trạng thái
+        server.gameSessionEnded(this);
+    }
+
+    /**
+     * Xử lý khi một người chơi chủ động bấm "Bỏ cuộc".
+     * @param forfeitingPlayer Người chơi đã bấm nút
+     */
+    public synchronized void playerForfeited(ClientHandler forfeitingPlayer) {
+        if (roundEnded || sessionEnded) return; // Đã kết thúc rồi, không xử lý nữa
+
+        roundEnded = true;
+        sessionEnded = true; // Đánh dấu session kết thúc ngay
+
+        if (roundTimer != null) {
+            roundTimer.cancel();
+        }
+
+        // Xác định người thắng cuộc
+        ClientHandler winningPlayer = (forfeitingPlayer == player1) ? player2 : player1;
+
+        if (winningPlayer == null) {
+            // Đối thủ đã mất kết nối (thoát đột ngột), chỉ cần dọn dẹp
+            server.gameSessionEnded(this);
+            return;
+        }
+
+        System.out.println(forfeitingPlayer.getUsername() + " đã bỏ cuộc. " + winningPlayer.getUsername() + " thắng.");
+
+        String p1Result, p2Result;
+        String p1Msg, p2Msg;
+
+        if (forfeitingPlayer == player1) {
+            p1Result = "LOSS";
+            p2Result = "WIN";
+            p1Msg = "Bạn đã bỏ cuộc!";
+            p2Msg = "Thắng! (Đối thủ bỏ cuộc)";
+        } else {
+            p1Result = "WIN";
+            p2Result = "LOSS";
+            p1Msg = "Thắng! (Đối thủ bỏ cuộc)";
+            p2Msg = "Bạn đã bỏ cuộc!";
+        }
+
+        // 1. Cập nhật database
+        server.getDatabaseDAO().updateMatchResult(
+                player1.getUserId(), player2.getUserId(),
+                p1Result, p2Result,
+                false, false, // Cả hai đều không "đúng"
+                0, 0 // Thời gian không còn quan trọng
+        );
+
+        // 2. Cập nhật stats local
+        DatabaseDAO.User p1Stats = server.getDatabaseDAO().getUserStats(player1.getUsername());
+        DatabaseDAO.User p2Stats = server.getDatabaseDAO().getUserStats(player2.getUsername());
+
+        if (p1Stats != null) {
+            player1.updateStats(p1Stats.totalWins, p1Stats.totalDraws, p1Stats.totalLosses);
+        }
+        if (p2Stats != null) {
+            player2.updateStats(p2Stats.totalWins, p2Stats.totalDraws, p2Stats.totalLosses);
+        }
+
+        // 3. Gửi thông báo kết quả.
+        // Logic mới: Gửi đúng thông điệp (p1Msg/p2Msg) cho đúng người (thắng/thua)
+
+        if (forfeitingPlayer == player1) {
+            // P1 là người bỏ cuộc, P2 là người thắng
+            // Gửi p1Msg ("Bạn đã bỏ cuộc!") cho P1 (người bỏ cuộc)
+            forfeitingPlayer.sendMessage("OPPONENT_EXITED:" + p1Msg);
+            // Gửi p2Msg ("Thắng!...") cho P2 (người thắng)
+            winningPlayer.sendMessage("OPPONENT_EXITED:" + p2Msg);
+        } else {
+            // P2 là người bỏ cuộc, P1 là người thắng
+            // Gửi p2Msg ("Bạn đã bỏ cuộc!") cho P2 (người bỏ cuộc)
+            forfeitingPlayer.sendMessage("OPPONENT_EXITED:" + p2Msg);
+            // Gửi p1Msg ("Thắng!...") cho P1 (người thắng)
+            winningPlayer.sendMessage("OPPONENT_EXITED:" + p1Msg);
+        }
+
+        // 4. Cập nhật BXH cho mọi người
+        server.broadcastLeaderboard();
+
+        // 5. Dọn dẹp session
         server.gameSessionEnded(this);
     }
 
