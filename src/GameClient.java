@@ -16,7 +16,6 @@ import java.util.Arrays;
 import java.util.List;
 
 public class GameClient extends JFrame {
-
     private static final String SERVER_ADDRESS = "127.0.0.1";
     private static final int SERVER_PORT = 12345;
 
@@ -33,11 +32,7 @@ public class GameClient extends JFrame {
     private String username;
 
     public GameClient() {
-        this(false);
-    }
-
-    public GameClient(boolean previewMode) {
-        setTitle("Game Xếp Đơn Hàng Siêu Thị" + (previewMode ? " [PREVIEW MODE]" : ""));
+        setTitle("Game Xếp Đơn Hàng Siêu Thị");
         setSize(800, 600);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
@@ -56,18 +51,14 @@ public class GameClient extends JFrame {
         add(mainPanel);
         cardLayout.show(mainPanel, "LOGIN");
 
-        if (!previewMode) {
-            try {
-                connectToServer();
-            } catch (IOException e) {
-                JOptionPane.showMessageDialog(this,
-                        "Không thể kết nối tới server: " + e.getMessage(),
-                        "Lỗi kết nối",
-                        JOptionPane.ERROR_MESSAGE);
-                System.exit(1);
-            }
-        } else {
-            loadPreviewData();
+        try {
+            connectToServer();
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this,
+                    "Không thể kết nối tới server: " + e.getMessage(),
+                    "Lỗi kết nối",
+                    JOptionPane.ERROR_MESSAGE);
+            System.exit(1);
         }
     }
 
@@ -89,34 +80,6 @@ public class GameClient extends JFrame {
         cardLayout.show(mainPanel, panelName);
     }
 
-    private void loadPreviewData() {
-        username = "PreviewUser";
-        lobbyPanel.setWelcomeMessage(username);
-        String[] fakePlayers = {"Player1(5W-2D-1L):ONLINE:IDLE", "Player2(3W-1D-2L):ONLINE:BUSY"};
-        lobbyPanel.updateOnlineList(fakePlayers);
-        lobbyPanel.updateLeaderboard("LEADERBOARD:1. Player1 (17 pts | 5W-2D-1L)");
-        addPreviewButtons();
-    }
-
-    private void addPreviewButtons() {
-        JPanel previewPanel = new JPanel(new FlowLayout());
-        previewPanel.setBackground(Color.YELLOW);
-        JButton btnShowLogin = new JButton("Login");
-        JButton btnShowLobby = new JButton("Lobby");
-        JButton btnShowGame = new JButton("Game");
-        btnShowLogin.addActionListener(e -> showPanel("LOGIN"));
-        btnShowLobby.addActionListener(e -> showPanel("LOBBY"));
-        btnShowGame.addActionListener(e -> {
-            gamePanel.startNewRound("Player2", "Táo,Cam,Sữa,Trứng,Thịt Gà",
-                    "Táo,Chuối,Cam,Nho,Sữa,Bánh Mì,Trứng,Phô Mai,Thịt Gà,Cá", 60);
-            showPanel("GAME");
-        });
-        previewPanel.add(new JLabel("PREVIEW: "));
-        previewPanel.add(btnShowLogin);
-        previewPanel.add(btnShowLobby);
-        previewPanel.add(btnShowGame);
-        add(previewPanel, BorderLayout.SOUTH);
-    }
 
     class LoginPanel extends JPanel implements ActionListener {
         private GameClient client;
@@ -176,6 +139,7 @@ public class GameClient extends JFrame {
         }
     }
 
+    // --- Lớp LobbyPanel ---
     class LobbyPanel extends JPanel {
         private GameClient client;
         private JList<String> onlinePlayersList;
@@ -242,9 +206,7 @@ public class GameClient extends JFrame {
         }
 
         public void updateLeaderboard(String leaderboard) {
-//            leaderboardArea.setText(leaderboard.replace("LEADERBOARD:", ""));
             String formattedText = leaderboard.replace(";;", "\n");
-
             leaderboardArea.setText(formattedText);
         }
 
@@ -259,16 +221,21 @@ public class GameClient extends JFrame {
         }
     }
 
+    // --- Lớp GamePanel ---
     class GamePanel extends JPanel implements ActionListener {
         private GameClient client;
-        private JLabel lblOpponent, lblTimer, lblOrderStatus, lblYourStats, lblOpponentStats;
+        private JLabel lblOpponent, lblTimer, lblMatchProgress, lblYourProgress, lblOpponentProgress;
         private JPanel pnlOrder, pnlShelf, pnlPackingTray;
         private JButton btnSubmit, btnExit, btnResetTray;
+
         private javax.swing.Timer gameTimer;
         private int timeLeft;
         private List<String> currentOrder;
         private List<String> currentPackingTray;
         private boolean hasAskedToPlayAgain = false;
+
+        private int myProgress = 0;
+        private int opponentProgress = 0;
 
         public GamePanel(GameClient client) {
             this.client = client;
@@ -281,16 +248,17 @@ public class GameClient extends JFrame {
             JPanel topPanel = new JPanel(new BorderLayout());
             JPanel infoPanel = new JPanel(new GridLayout(2, 2));
             lblOpponent = new JLabel("Đang chơi với: ");
-            lblYourStats = new JLabel("Bạn: Chưa hoàn thành");
-            lblOpponentStats = new JLabel("Đối thủ: Chưa hoàn thành");
-            lblOrderStatus = new JLabel("Đã xếp: 0/0", JLabel.RIGHT);
+            lblYourProgress = new JLabel("Bạn: Hoàn thành 0/5 đơn");
+            lblOpponentProgress = new JLabel("Đối thủ: Hoàn thành 0/5 đơn");
+            lblMatchProgress = new JLabel("Đơn hàng 1/5", JLabel.RIGHT);
+
             infoPanel.add(lblOpponent);
-            infoPanel.add(lblOrderStatus);
-            infoPanel.add(lblYourStats);
-            infoPanel.add(lblOpponentStats);
+            infoPanel.add(lblMatchProgress); // Sửa thứ tự
+            infoPanel.add(lblYourProgress);
+            infoPanel.add(lblOpponentProgress);
             topPanel.add(infoPanel, BorderLayout.NORTH);
 
-            lblTimer = new JLabel("Thời gian: 60s", JLabel.CENTER);
+            lblTimer = new JLabel("Thời gian: 1:00", JLabel.CENTER); // Sửa text mặc định
             lblTimer.setFont(new Font("Arial", Font.BOLD, 24));
             lblTimer.setForeground(new Color(0, 150, 0));
             topPanel.add(lblTimer, BorderLayout.CENTER);
@@ -326,23 +294,53 @@ public class GameClient extends JFrame {
 
             gameTimer = new javax.swing.Timer(1000, e -> {
                 timeLeft--;
-                lblTimer.setText("Thời gian: " + timeLeft + "s");
-                if (timeLeft <= 10) lblTimer.setForeground(Color.RED);
+
+                if (timeLeft >= 0) {
+                    lblTimer.setText("Thời gian: " + (timeLeft / 60) + ":" + String.format("%02d", (timeLeft % 60)));
+                }
+                if (timeLeft <= 30) lblTimer.setForeground(Color.RED); // Báo đỏ khi còn 30s
                 if (timeLeft <= 0) {
                     gameTimer.stop();
-                    client.sendMessageToServer("SUBMIT_ORDER:TIMEOUT");
+                    // Không cần gửi TIMEOUT nữa, Server sẽ tự ngắt
+                    // Vô hiệu hóa nút khi hết giờ
                     btnSubmit.setEnabled(false);
+                    btnExit.setEnabled(false);
+                    btnResetTray.setEnabled(false);
+                    lblTimer.setText("HẾT GIỜ!");
                 }
             });
         }
 
-        public void startNewRound(String opponent, String orderCsv, String shelfCsv, int time) {
+        public void startMatch(String opponent, int time) {
             lblOpponent.setText("Đang chơi với: " + opponent);
-            lblYourStats.setText("Bạn: Đang xếp...");
-            lblOpponentStats.setText("Đối thủ: Đang xếp...");
             timeLeft = time;
-            lblTimer.setText("Thời gian: " + timeLeft + "s");
+            lblTimer.setText("Thời gian: " + (timeLeft / 60) + ":" + String.format("%02d", (timeLeft % 60)));
             lblTimer.setForeground(new Color(0, 150, 0));
+
+            // Reset tiến độ
+            updateMyProgress(0);
+            updateOpponentProgress(0);
+            hasAskedToPlayAgain = false;
+
+            // Kích hoạt các nút
+            btnSubmit.setEnabled(true);
+            btnExit.setEnabled(true);
+            btnResetTray.setEnabled(true);
+
+            // Xóa rác
+            pnlOrder.removeAll();
+            pnlShelf.removeAll();
+            pnlPackingTray.removeAll();
+            pnlOrder.revalidate();
+            pnlShelf.revalidate();
+            pnlPackingTray.revalidate();
+
+            gameTimer.start();
+        }
+
+        // HÀM MỚI: Hiển thị đơn hàng
+        public void displayNewOrder(int orderIndex, String orderCsv, String shelfCsv) {
+            lblMatchProgress.setText(String.format("Đơn hàng %d/5", orderIndex + 1));
 
             currentOrder = Arrays.asList(orderCsv.split(","));
             List<String> shelfItems = Arrays.asList(shelfCsv.split(","));
@@ -357,18 +355,38 @@ public class GameClient extends JFrame {
             for (String item : shelfItems) {
                 JButton btn = new JButton(item);
                 btn.addActionListener(e -> {
-                    currentPackingTray.add(item);
-                    updatePackingTrayUI();
+                    if (btnSubmit.isEnabled()) { // Chỉ cho phép thêm nếu game còn
+                        currentPackingTray.add(item);
+                        updatePackingTrayUI();
+                    }
                 });
                 pnlShelf.add(btn);
             }
 
             updatePackingTrayUI();
-            btnSubmit.setEnabled(true);
-            hasAskedToPlayAgain = false;
-            gameTimer.start();
+            btnSubmit.setEnabled(true); // Kích hoạt lại nút nộp
+            btnResetTray.setEnabled(true); // Kích hoạt lại nút reset
+
             revalidate();
             repaint();
+        }
+
+        // Cập nhật tiến độ của BẠN
+        public void updateMyProgress(int progress) {
+            this.myProgress = progress;
+            lblYourProgress.setText(String.format("Bạn: Hoàn thành %d/5 đơn", progress));
+            // Cập nhật lại text đơn hàng
+            if (progress < 5) {
+                lblMatchProgress.setText(String.format("Đơn hàng %d/5", (myProgress + 1)));
+            } else {
+                lblMatchProgress.setText("Đã xong 5/5!");
+            }
+        }
+
+        //Cập nhật tiến độ của ĐỐI THỦ
+        public void updateOpponentProgress(int progress) {
+            this.opponentProgress = progress;
+            lblOpponentProgress.setText(String.format("Đối thủ: Hoàn thành %d/5 đơn", progress));
         }
 
         private void updatePackingTrayUI() {
@@ -376,17 +394,22 @@ public class GameClient extends JFrame {
             for (int i = 0; i < currentPackingTray.size(); i++) {
                 pnlPackingTray.add(new JLabel((i + 1) + ". " + currentPackingTray.get(i)));
             }
-            lblOrderStatus.setText(String.format("Đã xếp: %d/%d", currentPackingTray.size(), currentOrder.size()));
+            // Hiển thị cả tiến độ và số lượng đã xếp
+            if (myProgress < 5) {
+                lblMatchProgress.setText(String.format("Đơn hàng %d/5 (Đã xếp: %d/%d)", (myProgress + 1), currentPackingTray.size(), currentOrder.size()));
+            }
             pnlPackingTray.revalidate();
             pnlPackingTray.repaint();
         }
 
-        public void updateOpponentStatus(String status) {
-            lblOpponentStats.setText("Đối thủ: " + status);
-        }
-
         public void stopTimer() {
             if (gameTimer.isRunning()) gameTimer.stop();
+        }
+
+        public void reEnableSubmission() {
+            // Cho phép người chơi nộp lại và xếp lại
+            btnSubmit.setEnabled(true);
+            btnResetTray.setEnabled(true);
         }
 
         @Override
@@ -396,25 +419,18 @@ public class GameClient extends JFrame {
                     JOptionPane.showMessageDialog(this, "Bạn phải xếp đủ " + currentOrder.size() + " món!");
                     return;
                 }
-                gameTimer.stop();
                 btnSubmit.setEnabled(false);
+                btnResetTray.setEnabled(false);
                 client.sendMessageToServer("SUBMIT_ORDER:" + String.join(",", currentPackingTray));
+
             } else if (e.getSource() == btnResetTray) {
                 currentPackingTray.clear();
                 updatePackingTrayUI();
-            } else if (e.getSource() == btnExit) {
-//                gameTimer.stop();
-//                int choice = JOptionPane.showConfirmDialog(this, "Bạn có chắc muốn thoát?", "Xác nhận", JOptionPane.YES_NO_OPTION);
-//                if (choice == JOptionPane.YES_OPTION) {
-//                    client.sendMessageToServer("EXIT_GAME");
-//                    client.showPanel("LOBBY");
-//                } else if (timeLeft > 0) {
-//                    gameTimer.start();
-//                }
 
+            } else if (e.getSource() == btnExit) {
                 // Dừng timer
                 gameTimer.stop();
-                // Vô hiệu hóa các nút để tránh bấm nhiều lần
+                // Vô hiệu hóa các nút
                 btnSubmit.setEnabled(false);
                 btnExit.setEnabled(false);
                 btnResetTray.setEnabled(false);
@@ -483,27 +499,46 @@ public class GameClient extends JFrame {
                 case "CHALLENGE_REJECTED":
                     JOptionPane.showMessageDialog(lobbyPanel, "Người chơi '" + data + "' đã từ chối.");
                     break;
+
                 case "GAME_START":
-                    String[] gameData = data.split(":");
-                    gamePanel.startNewRound(gameData[0], gameData[1], gameData[2], Integer.parseInt(gameData[3]));
+                    String[] gameData = data.split(":"); // OpponentName:MatchTime
+                    gamePanel.startMatch(gameData[0], Integer.parseInt(gameData[1]));
                     showPanel("GAME");
                     break;
+
+                case "NEW_ORDER":
+                    // Format: OrderIndex:OrderCsv:ShelfCsv
+                    String[] orderData = data.split(":", 3);
+                    gamePanel.displayNewOrder(Integer.parseInt(orderData[0]), orderData[1], orderData[2]);
+                    break;
+                case "UPDATE_PROGRESS":
+                    // Format: newProgress
+                    gamePanel.updateMyProgress(Integer.parseInt(data));
+                    break;
+                case "OPPONENT_PROGRESS":
+                    // Format: newProgress
+                    gamePanel.updateOpponentProgress(Integer.parseInt(data));
+                    break;
+                case "SUBMIT_FAIL":
+                    JOptionPane.showMessageDialog(gamePanel, data, "Sai rồi!", JOptionPane.WARNING_MESSAGE);
+                    // Cho phép nộp lại bằng cách gọi hàm công khai của gamePanel
+                    gamePanel.reEnableSubmission();
+                    break;
                 case "ROUND_RESULT":
-                    String[] resultData = data.split(":");
+                    String[] resultData = data.split(":", 2); // Tách 2 phần: Result:Message
                     if (!gamePanel.hasAskedToPlayAgain) {
                         gamePanel.hasAskedToPlayAgain = true;
+                        gamePanel.stopTimer(); // Dừng timer ngay khi có kết quả
+
                         int playChoice = JOptionPane.showConfirmDialog(gamePanel,
                                 resultData[1] + "\n\nBạn có muốn chơi tiếp?", "Kết quả - " + resultData[0], JOptionPane.YES_NO_OPTION);
                         if (playChoice == JOptionPane.YES_OPTION) {
                             sendMessageToServer("PLAY_AGAIN_REQUEST");
                         } else {
-                            sendMessageToServer("EXIT_GAME");
+                            sendMessageToServer("EXIT_GAME"); // Gửi EXIT_GAME
                             showPanel("LOBBY");
                         }
                     }
-                    break;
-                case "OPPONENT_SUBMITTED":
-                    gamePanel.updateOpponentStatus("Đã nộp bài!");
                     break;
                 case "PLAY_AGAIN_REQUEST":
                     if (!gamePanel.hasAskedToPlayAgain) {
@@ -520,7 +555,7 @@ public class GameClient extends JFrame {
                     break;
                 case "OPPONENT_EXITED":
                     gamePanel.stopTimer();
-                    gamePanel.hasAskedToPlayAgain = true;
+                    gamePanel.hasAskedToPlayAgain = true; // Ngăn hỏi chơi lại
                     JOptionPane.showMessageDialog(gamePanel, data, "Trận đấu kết thúc", JOptionPane.INFORMATION_MESSAGE);
                     showPanel("LOBBY");
                     break;
@@ -529,9 +564,8 @@ public class GameClient extends JFrame {
     }
 
     public static void main(String[] args) {
-        boolean previewMode = args.length > 0 && args[0].equals("--preview");
         SwingUtilities.invokeLater(() -> {
-            GameClient client = new GameClient(previewMode);
+            GameClient client = new GameClient();
             client.setVisible(true);
             client.addWindowListener(new java.awt.event.WindowAdapter() {
                 @Override

@@ -84,6 +84,13 @@ LEFT JOIN (
 ) s ON s.user_id = u.id
 ORDER BY points DESC, total_wins DESC, total_matches ASC, u.username ASC;
 
+-- View nhanh để hiển thị username + password (dùng trong Workbench)
+DROP VIEW IF EXISTS players_credentials;
+CREATE VIEW players_credentials AS
+SELECT id, username, password, created_at
+FROM users
+ORDER BY username;
+
 -- Trigger tự động tạo player_stats khi có user mới
 DELIMITER //
 CREATE TRIGGER create_player_stats_after_user_insert

@@ -6,9 +6,8 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 /**
- * Vai trò 1: Trọng tài (Server)
- * Lớp này quản lý logic của MỘT ván game giữa 2 người chơi.
- * Nó được tạo ra khi 2 người chơi đồng ý thách đấu.
+ * Vai trò: Trọng tài (Server)
+ * Lớp này quản lý logic của MỘT TRẬN ĐẤU (5 đơn hàng, 60 giây)
  */
 public class GameSession {
 
@@ -17,32 +16,35 @@ public class GameSession {
             "Táo", "Chuối", "Cam", "Nho", "Sữa", "Bánh Mì", "Trứng", "Phô Mai", "Thịt Gà", "Cá"
     };
 
-    private static final int ROUND_TIME_SECONDS = 60; // Thời gian một ván
+    private static final int MATCH_TIME_SECONDS = 60;
+    private static final int NUM_ORDERS_PER_MATCH = 5;
     private static final int ORDER_SIZE = 5; // Số lượng mặt hàng trong 1 đơn
 
     private ClientHandler player1;
     private ClientHandler player2;
     private Server server; // Để gọi lại server khi game kết thúc
 
-    // Thông tin ván chơi hiện tại
-    private List<String> currentOrder; // Đơn hàng yêu cầu (đúng thứ tự)
-    private List<String> currentShelf; // Kệ hàng (ngẫu nhiên)
+    // Thông tin trận đấu
+    private List<List<String>> allOrders = new ArrayList<>();
+    private List<List<String>> allShelves = new ArrayList<>();
 
-    // Kết quả của ván
+    // Tiến độ
+    private int player1Progress = 0;
+    private int player2Progress = 0;
+
+    // Dùng để đánh dấu ai xong 5/5
     private String player1Submission = null;
     private String player2Submission = null;
-    private long player1SubmitTime = -1; // (ms)
-    private long player2SubmitTime = -1; // (ms)
-    private long roundStartTime;
 
     // Trạng thái chờ chơi lại
     private boolean player1WantsToPlayAgain = false;
     private boolean player2WantsToPlayAgain = false;
-    private boolean roundEnded = false;
 
-    private Timer roundTimer;
-
-    private volatile boolean sessionEnded = false; // THÊM FLAG
+    // Đổi tên: roundEnded -> matchEnded
+    private volatile boolean matchEnded = false;
+    private volatile boolean sessionEnded = false;
+    private Timer matchTimer;
+    private long matchStartTime;
 
 
     public GameSession(ClientHandler p1, ClientHandler p2, Server server) {
@@ -52,231 +54,203 @@ public class GameSession {
         System.out.println("Creating GameSession for: " + p1.getUsername() + " and " + p2.getUsername());
     }
 
-    // Bắt đầu một ván mới (hoặc ván đầu tiên)
-    public synchronized void startNewRound() {
-        // Reset trạng thái ván
+    // Đổi tên: Bắt đầu một trận đấu mới
+    public synchronized void startMatch() {
+        // Reset trạng thái trận
+        player1Progress = 0;
+        player2Progress = 0;
         player1Submission = null;
         player2Submission = null;
-        player1SubmitTime = -1;
-        player2SubmitTime = -1;
+        allOrders.clear();
+        allShelves.clear();
+
         player1WantsToPlayAgain = false;
         player2WantsToPlayAgain = false;
-        roundEnded = false;
+        matchEnded = false;
 
-        // 1. Tạo đơn hàng (order)
-        List<String> allItemsList = new ArrayList<>(Arrays.asList(ALL_ITEMS));
-        Collections.shuffle(allItemsList);
-        currentOrder = new ArrayList<>(allItemsList.subList(0, ORDER_SIZE));
+        //  Tạo 5 đơn hàng và 5 kệ hàng (giống nhau cho cả 2)
+        for (int i = 0; i < NUM_ORDERS_PER_MATCH; i++) {
+            List<String> allItemsList = new ArrayList<>(Arrays.asList(ALL_ITEMS));
+            Collections.shuffle(allItemsList);
+            List<String> order = new ArrayList<>(allItemsList.subList(0, ORDER_SIZE));
 
-        // 2. Tạo kệ hàng (shelf)
-        // Kệ hàng phải chứa đủ các món trong đơn, và thêm vài món ngẫu nhiên
-        currentShelf = new ArrayList<>(currentOrder);
-        while (currentShelf.size() < ALL_ITEMS.length) {
-            currentShelf.add(allItemsList.get(currentShelf.size()));
+            List<String> shelf = new ArrayList<>(order);
+            while (shelf.size() < ALL_ITEMS.length) {
+                shelf.add(allItemsList.get(shelf.size()));
+            }
+            Collections.shuffle(shelf);
+
+            allOrders.add(order);
+            allShelves.add(shelf);
         }
-        Collections.shuffle(currentShelf); // Xáo trộn kệ hàng
 
-        // 3. Chuyển đổi sang chuỗi CSV để gửi
-        String orderCsv = String.join(",", currentOrder);
-        String shelfCsv = String.join(",", currentShelf);
-
-        // 4. Gửi thông tin ván game cho cả 2 client
+        // Gửi lệnh bắt đầu trận đấu (chỉ gửi thời gian)
         String opponent1 = player2.getUsername();
         String opponent2 = player1.getUsername();
 
-        String msg1 = String.format("GAME_START:%s:%s:%s:%d", opponent1, orderCsv, shelfCsv, ROUND_TIME_SECONDS);
-        String msg2 = String.format("GAME_START:%s:%s:%s:%d", opponent2, orderCsv, shelfCsv, ROUND_TIME_SECONDS);
+        // Format: GAME_START:OpponentName:MatchTimeSeconds
+        player1.sendMessage(String.format("GAME_START:%s:%d", opponent1, MATCH_TIME_SECONDS));
+        player2.sendMessage(String.format("GAME_START:%s:%d", opponent2, MATCH_TIME_SECONDS));
 
-        player1.sendMessage(msg1);
-        player2.sendMessage(msg2);
+        // Gửi đơn hàng ĐẦU TIÊN (index 0)
+        sendNewOrderToPlayer(player1, 0);
+        sendNewOrderToPlayer(player2, 0);
 
-        // 5. Ghi lại thời gian bắt đầu
-        roundStartTime = System.currentTimeMillis();
-        System.out.println("New round started. Order: " + orderCsv);
+        // Ghi lại thời gian bắt đầu
+        matchStartTime = System.currentTimeMillis();
+        System.out.println("New match (60s, 5 orders) started for " + opponent2 + " vs " + opponent1);
 
-        // 6. Khởi tạo timer tự động kết thúc ván
-        startRoundTimer();
+        // Khởi tạo timer cho TOÀN BỘ TRẬN ĐẤU
+        startMatchTimer();
     }
 
-    // Timer tự động kết thúc ván khi hết giờ
-    private void startRoundTimer() {
-        if (roundTimer != null) {
-            roundTimer.cancel();
+    // Hàm helper: Gửi đơn hàng mới cho người chơi
+    private void sendNewOrderToPlayer(ClientHandler player, int orderIndex) {
+        if (orderIndex >= NUM_ORDERS_PER_MATCH) return; // Đã xong 5/5
+
+        String orderCsv = String.join(",", allOrders.get(orderIndex));
+        String shelfCsv = String.join(",", allShelves.get(orderIndex));
+
+        // Format: NEW_ORDER:OrderIndex:OrderCsv:ShelfCsv
+        player.sendMessage(String.format("NEW_ORDER:%d:%s:%s", orderIndex, orderCsv, shelfCsv));
+    }
+
+
+    // Timer tự động kết thúc TRẬN ĐẤU
+    private void startMatchTimer() {
+        if (matchTimer != null) {
+            matchTimer.cancel();
         }
-        roundTimer = new Timer();
-        roundTimer.schedule(new TimerTask() {
+        matchTimer = new Timer();
+        matchTimer.schedule(new TimerTask() {
             @Override
             public void run() {
-                forceEndRound();
+                forceEndMatch(); // Gọi hàm kết thúc
             }
-        }, ROUND_TIME_SECONDS * 1000 + 1000); // Thêm 1s buffer
+        }, MATCH_TIME_SECONDS * 1000 + 1000); // Thêm 1s buffer
     }
 
-    // Buộc kết thúc ván khi hết giờ
-    private synchronized void forceEndRound() {
-        if (roundEnded) return;
+    /**
+     * Hàm này được gọi khi HẾT GIỜ (từ timer)
+     * hoặc khi 1 người chơi hoàn thành 5/5 (từ receivePlayerSubmission).
+     * Đây là nơi duy nhất quyết định thắng/thua/hòa.
+     */
+    private synchronized void forceEndMatch() {
+        if (matchEnded) return; // Đã kết thúc rồi, không xử lý
+        matchEnded = true;
+        if (matchTimer != null) matchTimer.cancel();
 
-        // Người chưa nộp = timeout
-        if (player1Submission == null) {
-            player1Submission = "TIMEOUT";
-            player1SubmitTime = ROUND_TIME_SECONDS * 1000;
-        }
-        if (player2Submission == null) {
-            player2Submission = "TIMEOUT";
-            player2SubmitTime = ROUND_TIME_SECONDS * 1000;
-        }
+        System.out.println("Match finalizing. Calculating results...");
 
-        checkIfRoundEnded();
-    }
-
-    // Nhận kết quả xếp hàng từ một người chơi
-    public synchronized void receivePlayerSubmission(ClientHandler player, String submissionCsv) {
-        if (roundEnded) return;
-
-        // Validation: kiểm tra submission hợp lệ
-        if (!isValidSubmission(submissionCsv)) {
-            player.sendMessage("SERVER_MSG:Kết quả không hợp lệ!");
-            return;
-        }
-
-        long submitTime = System.currentTimeMillis() - roundStartTime;
-
-        if (player == player1 && player1Submission == null) {
-            player1Submission = submissionCsv;
-            player1SubmitTime = submitTime;
-            player.sendMessage("SERVER_MSG:Đã nhận kết quả. Đang chờ đối thủ...");
-            player2.sendMessage("OPPONENT_SUBMITTED");
-            
-            System.out.println(player1.getUsername() + " submitted: " + submissionCsv + " (Time: " + submitTime + "ms)");
-
-        } else if (player == player2 && player2Submission == null) {
-            player2Submission = submissionCsv;
-            player2SubmitTime = submitTime;
-            player.sendMessage("SERVER_MSG:Đã nhận kết quả. Đang chờ đối thủ...");
-            player1.sendMessage("OPPONENT_SUBMITTED");
-            
-            System.out.println(player2.getUsername() + " submitted: " + submissionCsv + " (Time: " + submitTime + "ms)");
-        }
-
-        checkIfRoundEnded();
-    }
-
-    // Validation: kiểm tra submission có hợp lệ không
-    private boolean isValidSubmission(String submissionCsv) {
-        if ("TIMEOUT".equals(submissionCsv)) {
-            return true; // Cho phép TIMEOUT
-        }
-
-        String[] items = submissionCsv.split(",");
-        if (items.length != ORDER_SIZE) {
-            return false;
-        }
-
-        // Kiểm tra các item có nằm trong shelf không
-        for (String item : items) {
-            if (!currentShelf.contains(item.trim())) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    // Hàm này được gọi khi hết giờ (từ client) hoặc khi cả 2 đã nộp
-    public synchronized void checkIfRoundEnded() {
-        if (roundEnded) return;
-        if (player1Submission == null || player2Submission == null) return;
-
-        roundEnded = true;
-        if (roundTimer != null) {
-            roundTimer.cancel();
-        }
-
-        System.out.println("Both players submitted. Starting scoring...");
-
-        String correctOrderCsv = String.join(",", currentOrder);
-        boolean p1Timeout = "TIMEOUT".equals(player1Submission);
-        boolean p2Timeout = "TIMEOUT".equals(player2Submission);
-        boolean p1Correct = !p1Timeout && correctOrderCsv.equals(player1Submission);
-        boolean p2Correct = !p2Timeout && correctOrderCsv.equals(player2Submission);
-
-        double p1TimeSeconds = player1SubmitTime / 1000.0;
-        double p2TimeSeconds = player2SubmitTime / 1000.0;
-
-        // Xác định kết quả: WIN, DRAW, LOSS
         String p1Result, p2Result;
         String p1Msg, p2Msg;
 
-        if (p1Timeout && p2Timeout) {
-            p1Result = p2Result = "DRAW";
-            p1Msg = p2Msg = "Hòa! (Cả 2 hết giờ)";
-        } else if (p1Timeout) {
-            p1Result = "LOSS";
-            p2Result = "WIN";
-            p1Msg = "Thua! (Hết giờ)";
-            p2Msg = p2Correct ? "Thắng! (Đối thủ hết giờ)" : "Thắng! (Đối thủ hết giờ, bạn cũng sai nhưng vẫn thắng)";
-        } else if (p2Timeout) {
-            p1Result = "WIN";
-            p2Result = "LOSS";
-            p2Msg = "Thua! (Hết giờ)";
-            p1Msg = p1Correct ? "Thắng! (Đối thủ hết giờ)" : "Thắng! (Đối thủ hết giờ, bạn cũng sai nhưng vẫn thắng)";
-        } else if (p1Correct && p2Correct) {
-            if (p1TimeSeconds < p2TimeSeconds) {
-                p1Result = "WIN"; p2Result = "LOSS";
-                p1Msg = "Thắng! (Nhanh hơn)";
-                p2Msg = "Thua! (Chậm hơn)";
-            } else if (p2TimeSeconds < p1TimeSeconds) {
-                p1Result = "LOSS"; p2Result = "WIN";
-                p1Msg = "Thua! (Chậm hơn)";
-                p2Msg = "Thắng! (Nhanh hơn)";
-            } else {
-                p1Result = p2Result = "DRAW";
-                p1Msg = p2Msg = "Hòa! (Cùng đúng và cùng thời gian)";
-            }
-        } else if (p1Correct && !p2Correct) {
+        boolean p1Finished = (player1Progress == NUM_ORDERS_PER_MATCH);
+        boolean p2Finished = (player2Progress == NUM_ORDERS_PER_MATCH);
+
+        // Quy tắc 3: Thắng ngay lập tức
+        if (p1Finished && !p2Finished) {
             p1Result = "WIN"; p2Result = "LOSS";
-            p1Msg = "Thắng! (Đối thủ sai)";
-            p2Msg = "Thua! (Bạn xếp sai)";
-        } else if (!p1Correct && p2Correct) {
+            p1Msg = "Thắng! (Hoàn thành 5/5 đơn trước)";
+            p2Msg = "Thua! (Đối thủ xong 5/5 đơn)";
+        } else if (!p1Finished && p2Finished) {
             p1Result = "LOSS"; p2Result = "WIN";
-            p1Msg = "Thua! (Bạn xếp sai)";
-            p2Msg = "Thắng! (Đối thủ sai)";
+            p1Msg = "Thua! (Đối thủ xong 5/5 đơn)";
+            p2Msg = "Thắng! (Hoàn thành 5/5 đơn trước)";
+        }
+        // Quy tắc 2 & 4: Hết giờ, so sánh
+        else if (player1Progress > player2Progress) {
+            p1Result = "WIN"; p2Result = "LOSS";
+            p1Msg = "Thắng! (Hết giờ, nhiều đơn hơn)";
+            p2Msg = "Thua! (Hết giờ, ít đơn hơn)";
+        } else if (player2Progress > player1Progress) {
+            p1Result = "LOSS"; p2Result = "WIN";
+            p1Msg = "Thua! (Hết giờ, ít đơn hơn)";
+            p2Msg = "Thắng! (Hết giờ, nhiều đơn hơn)";
         } else {
+            // Bao gồm p1Progress == p2Progress VÀ p1Finished && p2Finished
             p1Result = p2Result = "DRAW";
-            p1Msg = p2Msg = "Hòa! (Cả 2 cùng sai)";
+            p1Msg = p2Msg = "Hòa! (Hết giờ, số đơn bằng nhau)";
         }
 
         // Cập nhật database
         server.getDatabaseDAO().updateMatchResult(
-            player1.getUserId(), player2.getUserId(),
-            p1Result, p2Result,
-            p1Correct, p2Correct,
-            player1SubmitTime, player2SubmitTime
+                player1.getUserId(), player2.getUserId(),
+                p1Result, p2Result,
+                (p1Result.equals("WIN")), (p2Result.equals("WIN")),
+                player1Progress, player2Progress // Dùng time_ms để lưu số đơn
         );
 
         // Cập nhật stats local
-        DatabaseDAO.User p1Stats = server.getDatabaseDAO().getUserStats(player1.getUsername());
-        DatabaseDAO.User p2Stats = server.getDatabaseDAO().getUserStats(player2.getUsername());
-        
-        if (p1Stats != null) {
-            player1.updateStats(p1Stats.totalWins, p1Stats.totalDraws, p1Stats.totalLosses);
-        }
-        if (p2Stats != null) {
-            player2.updateStats(p2Stats.totalWins, p2Stats.totalDraws, p2Stats.totalLosses);
-        }
+        updateLocalStats();
 
-        // Gửi kết quả - Format: ROUND_RESULT:result:message:your_time:opponent_time:correct
-        String p1ResultMsg = String.format("ROUND_RESULT:%s:%s:%.2f:%.2f:%b",
-                p1Result, p1Msg, p1TimeSeconds, p2TimeSeconds, p1Correct);
-        String p2ResultMsg = String.format("ROUND_RESULT:%s:%s:%.2f:%.2f:%b",
-                p2Result, p2Msg, p2TimeSeconds, p1TimeSeconds, p2Correct);
+        // Gửi kết quả - Format: ROUND_RESULT:result:message
+        String p1ResultMsg = String.format("ROUND_RESULT:%s:%s (%d/5)", p1Result, p1Msg, player1Progress);
+        String p2ResultMsg = String.format("ROUND_RESULT:%s:%s (%d/5)", p2Result, p2Msg, player2Progress);
 
         player1.sendMessage(p1ResultMsg);
         player2.sendMessage(p2ResultMsg);
 
-        System.out.println("Round ended. P1: " + p1Result + ", P2: " + p2Result);
-
         server.broadcastLeaderboard();
+    }
+
+    // Hàm helper mới
+    private void updateLocalStats() {
+        DatabaseDAO.User p1Stats = server.getDatabaseDAO().getUserStats(player1.getUsername());
+        DatabaseDAO.User p2Stats = server.getDatabaseDAO().getUserStats(player2.getUsername());
+        if (p1Stats != null) player1.updateStats(p1Stats.totalWins, p1Stats.totalDraws, p1Stats.totalLosses);
+        if (p2Stats != null) player2.updateStats(p2Stats.totalWins, p2Stats.totalDraws, p2Stats.totalLosses);
+    }
+
+
+    // Logic nhận đơn hàng
+    public synchronized void receivePlayerSubmission(ClientHandler player, String submissionCsv) {
+        if (matchEnded) return;
+
+        int currentProgress;
+        ClientHandler opponent;
+
+        if (player == player1) {
+            currentProgress = player1Progress;
+            opponent = player2;
+        } else {
+            currentProgress = player2Progress;
+            opponent = player1;
+        }
+
+        // Nếu đã nộp xong 5 đơn, không xử lý
+        if (currentProgress >= NUM_ORDERS_PER_MATCH) return;
+
+        // 1. Lấy đơn hàng hiện tại
+        String correctOrderCsv = String.join(",", allOrders.get(currentProgress));
+
+        // 2. Kiểm tra
+        if (correctOrderCsv.equals(submissionCsv)) {
+            // --- ĐÚNG ---
+            currentProgress++;
+
+            // Cập nhật tiến độ
+            if (player == player1) player1Progress = currentProgress;
+            else player2Progress = currentProgress;
+
+            // Gửi thông báo cập nhật tiến độ cho 2 bên
+            player.sendMessage("UPDATE_PROGRESS:" + currentProgress);
+            opponent.sendMessage("OPPONENT_PROGRESS:" + currentProgress);
+
+            // 3. Gửi đơn hàng MỚI (nếu còn) HOẶC KẾT THÚC
+            if (currentProgress == NUM_ORDERS_PER_MATCH) {
+                // Hoàn thành 5/5 -> THẮNG NGAY LẬP TỨC
+                System.out.println(player.getUsername() + " finished 5/5.");
+                forceEndMatch(); // Gọi kết thúc trận ngay
+            } else {
+                // Vẫn còn, gửi đơn tiếp theo
+                sendNewOrderToPlayer(player, currentProgress);
+            }
+
+        } else {
+            // --- SAI ---
+            player.sendMessage("SUBMIT_FAIL:Đơn hàng sai! Vui lòng xếp lại đơn hiện tại.");
+        }
     }
 
     public synchronized void playerWantsToPlayAgain(ClientHandler player) {
@@ -288,10 +262,10 @@ public class GameSession {
             player2.sendMessage("SERVER_MSG:Đã gửi yêu cầu chơi tiếp. Đang chờ đối thủ...");
         }
 
-        // Nếu cả hai cùng muốn chơi lại -> Tạo ván mới
+        // Nếu cả hai cùng muốn chơi lại -> Tạo trận MỚI
         if (player1WantsToPlayAgain && player2WantsToPlayAgain) {
-            System.out.println("Both players agreed to play again. Starting new round.");
-            startNewRound();
+            System.out.println("Both players agreed to play again. Starting new match.");
+            startMatch(); // Đổi tên hàm
         }
         // Gửi yêu cầu cho người chơi kia
         else if (player1WantsToPlayAgain) {
@@ -301,56 +275,19 @@ public class GameSession {
         }
     }
 
-    // Xử lý khi một người chơi thoát game - CẢI THIỆN
-    public synchronized void playerExited(ClientHandler player) {
-        if (sessionEnded) return; // Tránh xử lý nhiều lần
+    // Xử lý khi một người chơi chủ động bấm "Bỏ cuộc" (hoặc thoát game)
+    public synchronized void playerForfeited(ClientHandler forfeitingPlayer) {
+        if (matchEnded || sessionEnded) return; // Đã kết thúc rồi, không xử lý nữa
+
+        matchEnded = true;
         sessionEnded = true;
 
-        // Hủy timer nếu có
-        if (roundTimer != null) {
-            roundTimer.cancel();
-            roundTimer = null;
-        }
-
-        // Lấy thông tin trước khi set null
-        ClientHandler p1 = player1;
-        ClientHandler p2 = player2;
-
-
-        // Gửi thông báo cho đối thủ
-        try {
-            if (player == p1 && p2 != null) {
-                p2.sendMessage("OPPONENT_EXITED:Đối thủ đã thoát khỏi trận đấu.");
-            } else if (player == p2 && p1 != null) {
-                p1.sendMessage("OPPONENT_EXITED:Đối thủ đã thoát khỏi trận đấu.");
-            }
-        } catch (Exception e) {
-            System.out.println("Error sending opponent exited notification: " + e.getMessage());
-        }
-
-        // Báo cho Server biết để cập nhật trạng thái
-        server.gameSessionEnded(this);
-    }
-
-    /**
-     * Xử lý khi một người chơi chủ động bấm "Bỏ cuộc".
-     * @param forfeitingPlayer Người chơi đã bấm nút
-     */
-    public synchronized void playerForfeited(ClientHandler forfeitingPlayer) {
-        if (roundEnded || sessionEnded) return; // Đã kết thúc rồi, không xử lý nữa
-
-        roundEnded = true;
-        sessionEnded = true; // Đánh dấu session kết thúc ngay
-
-        if (roundTimer != null) {
-            roundTimer.cancel();
-        }
+        if (matchTimer != null) matchTimer.cancel();
 
         // Xác định người thắng cuộc
         ClientHandler winningPlayer = (forfeitingPlayer == player1) ? player2 : player1;
 
         if (winningPlayer == null) {
-            // Đối thủ đã mất kết nối (thoát đột ngột), chỉ cần dọn dẹp
             server.gameSessionEnded(this);
             return;
         }
@@ -372,46 +309,50 @@ public class GameSession {
             p2Msg = "Bạn đã bỏ cuộc!";
         }
 
-        // 1. Cập nhật database
+        // Cập nhật CSDL
         server.getDatabaseDAO().updateMatchResult(
                 player1.getUserId(), player2.getUserId(),
                 p1Result, p2Result,
-                false, false, // Cả hai đều không "đúng"
-                0, 0 // Thời gian không còn quan trọng
+                (p1Result.equals("WIN")), (p2Result.equals("WIN")), // Gán người thắng là "correct"
+                player1Progress, player2Progress // Ghi lại tiến độ lúc bỏ cuộc
         );
 
-        // 2. Cập nhật stats local
-        DatabaseDAO.User p1Stats = server.getDatabaseDAO().getUserStats(player1.getUsername());
-        DatabaseDAO.User p2Stats = server.getDatabaseDAO().getUserStats(player2.getUsername());
+        // Cập nhật stats local
+        updateLocalStats();
 
-        if (p1Stats != null) {
-            player1.updateStats(p1Stats.totalWins, p1Stats.totalDraws, p1Stats.totalLosses);
-        }
-        if (p2Stats != null) {
-            player2.updateStats(p2Stats.totalWins, p2Stats.totalDraws, p2Stats.totalLosses);
-        }
+        // Gửi thông báo kết quả (sử dụng logic đã sửa)
+        if (player1 != null) player1.sendMessage("OPPONENT_EXITED:" + p1Msg);
+        if (player2 != null) player2.sendMessage("OPPONENT_EXITED:" + p2Msg);
 
-        // 3. Gửi thông báo kết quả.
-        // Logic mới: Gửi đúng thông điệp (p1Msg/p2Msg) cho đúng người (thắng/thua)
-
-        if (forfeitingPlayer == player1) {
-            // P1 là người bỏ cuộc, P2 là người thắng
-            // Gửi p1Msg ("Bạn đã bỏ cuộc!") cho P1 (người bỏ cuộc)
-            forfeitingPlayer.sendMessage("OPPONENT_EXITED:" + p1Msg);
-            // Gửi p2Msg ("Thắng!...") cho P2 (người thắng)
-            winningPlayer.sendMessage("OPPONENT_EXITED:" + p2Msg);
-        } else {
-            // P2 là người bỏ cuộc, P1 là người thắng
-            // Gửi p2Msg ("Bạn đã bỏ cuộc!") cho P2 (người bỏ cuộc)
-            forfeitingPlayer.sendMessage("OPPONENT_EXITED:" + p2Msg);
-            // Gửi p1Msg ("Thắng!...") cho P1 (người thắng)
-            winningPlayer.sendMessage("OPPONENT_EXITED:" + p1Msg);
-        }
-
-        // 4. Cập nhật BXH cho mọi người
+        // Cập nhật BXH cho mọi người
         server.broadcastLeaderboard();
 
-        // 5. Dọn dẹp session
+        // Dọn dẹp session
+        server.gameSessionEnded(this);
+    }
+
+    // Xử lý khi một người chơi thoát (khi đang không trong game)
+    public synchronized void playerExited(ClientHandler player) {
+        if (sessionEnded) return; // Tránh xử lý nhiều lần
+        sessionEnded = true;
+
+        if (matchTimer != null) matchTimer.cancel();
+
+        ClientHandler p1 = player1;
+        ClientHandler p2 = player2;
+
+        // Gửi thông báo cho đối thủ
+        try {
+            if (player == p1 && p2 != null) {
+                p2.sendMessage("OPPONENT_EXITED:Đối thủ đã thoát khỏi trận đấu.");
+            } else if (player == p2 && p1 != null) {
+                p1.sendMessage("OPPONENT_EXITED:Đối thủ đã thoát khỏi trận đấu.");
+            }
+        } catch (Exception e) {
+            System.out.println("Error sending opponent exited notification: " + e.getMessage());
+        }
+
+        // Báo cho Server biết để cập nhật trạng thái
         server.gameSessionEnded(this);
     }
 

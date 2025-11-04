@@ -5,10 +5,6 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.SocketException;
 
-/**
- * Vai trò 1: Backend Server & Socket
- * Lớp này chạy trên một Thread riêng, xử lý mọi giao tiếp với MỘT client.
- */
 public class ClientHandler implements Runnable {
 
     private Socket clientSocket;
@@ -120,12 +116,10 @@ public class ClientHandler implements Runnable {
 
         DatabaseDAO.User dbUser = databaseDAO.login(user, pass);
         if (dbUser != null) {
-            // SỬA LẠI - DÙNG METHOD THAY VÌ TRUY CẬP TRỰC TIẾP
             if (server.isUserOnline(user)) {
                 sendMessage("LOGIN_FAIL:Tài khoản này đã được đăng nhập ở nơi khác.");
                 return;
             }
-
             // Đăng nhập thành công
             this.username = dbUser.username;
             this.userId = dbUser.id;
@@ -159,7 +153,7 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // Gửi thông điệp tới client này - THÊM XỬ LÝ EXCEPTION
+    // Gửi thông điệp tới client này
     public void sendMessage(String message) {
         if (out != null && isConnected) {
             try {
@@ -175,7 +169,7 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // Dọn dẹp khi client ngắt kết nối - CẢI THIỆN
+    // Dọn dẹp khi client ngắt kết nối
     private void cleanup() {
         isConnected = false;
         try {

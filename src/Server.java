@@ -6,18 +6,15 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Vai trò 1: Backend Server & Socket
+ * Vai trò: Backend Server & Socket
  * Lớp Server chính, lắng nghe kết nối và quản lý danh sách ClientHandler.
  */
 public class Server {
 
     private static final int PORT = 12345;
-    // GIỮ PRIVATE
     private Map<String, ClientHandler> onlineUsers = new ConcurrentHashMap<>();
-    // Mapping user -> GameSession để dọn dẹp trạng thái BUSY bị kẹt
     private final Map<String, GameSession> sessionsByUser = new ConcurrentHashMap<>();
 
-    // Đối tượng DAO để tương tác CSDL
     protected DatabaseDAO databaseDAO;
 
     public Server() {
@@ -94,20 +91,7 @@ public class Server {
         // Format: ONLINE_LIST:username(5W-2D-1L):ONLINE:IDLE,username2(...):OFFLINE:IDLE,...
         StringBuilder userListMessage = new StringBuilder("ONLINE_LIST:");
         try {
-//            List<DatabaseDAO.User> allUsers = databaseDAO.getLeaderboard(); // View đã hiển thị tất cả users
-//            for (DatabaseDAO.User u : allUsers) {
-//                ClientHandler h = onlineUsers.get(u.username);
-//                boolean online = (h != null);
-//                String presence = online ? "ONLINE" : "OFFLINE";
-//                String activity = (online && h.isInGame()) ? "BUSY" : "IDLE";
-//                userListMessage
-//                        .append(u.username)
-//                        .append("(").append(u.totalWins).append("W-")
-//                        .append(u.totalDraws).append("D-")
-//                        .append(u.totalLosses).append("L")
-//                        .append("):").append(presence).append(":").append(activity)
-//                        .append(",");
-            List<DatabaseDAO.User> allUsers = databaseDAO.getLeaderboard(); // 1. Lấy danh sách (đang sắp xếp theo điểm)
+            List<DatabaseDAO.User> allUsers = databaseDAO.getLeaderboard(); // Lấy danh sách (đang sắp xếp theo điểm)
 
             // Sắp xếp lại danh sách allUsers theo 3 tiêu chí
             allUsers.sort((u1, u2) -> {
@@ -134,7 +118,7 @@ public class Server {
             });
 
 
-            // 3. Xây dựng chuỗi tin nhắn từ danh sách ĐÃ ĐƯỢC SẮP XẾP MỚI
+            // Xây dựng chuỗi tin nhắn từ danh sách ĐÃ ĐƯỢC SẮP XẾP MỚI
             for (DatabaseDAO.User u : allUsers) {
                 ClientHandler h = onlineUsers.get(u.username);
                 boolean online = (h != null);
@@ -173,7 +157,7 @@ public class Server {
         }
     }
 
-    // Gửi bảng xếp hạng - CẢI THIỆN FORMAT
+    // Gửi bảng xếp hạng
     public synchronized void broadcastLeaderboard() {
         List<DatabaseDAO.User> leaderboard = databaseDAO.getLeaderboard();
         StringBuilder leaderboardMessage = new StringBuilder("LEADERBOARD:");
@@ -257,8 +241,7 @@ public class Server {
             sessionsByUser.put(opponentName, gameSession);
 
             // Bắt đầu ván đầu tiên
-            gameSession.startNewRound();
-
+            gameSession.startMatch();
             // Cập nhật trạng thái "Bận" cho toàn bộ client
             broadcastOnlineList();
 
@@ -268,7 +251,7 @@ public class Server {
         }
     }
 
-    // Khi một game kết thúc - CẢI THIỆN
+    // Khi một game kết thúc
     public synchronized void gameSessionEnded(GameSession session) {
         try {
             ClientHandler p1 = session.getPlayer1();
