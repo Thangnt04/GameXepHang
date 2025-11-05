@@ -30,6 +30,23 @@ public class DatabaseDAO {
         }
     }
 
+    // --- INNER CLASS ĐỂ LƯU LỊCH SỬ ---
+    public static class MatchHistory {
+        public String opponentName;
+        public String myResult;
+        public long myScore;
+        public long opponentScore;
+        public Timestamp playedAt;
+
+        public MatchHistory(String opponentName, String myResult, long myScore, long opponentScore, Timestamp playedAt) {
+            this.opponentName = opponentName;
+            this.myResult = myResult;
+            this.myScore = myScore; // Số đơn của mình
+            this.opponentScore = opponentScore; // Số đơn của đối thủ
+            this.playedAt = playedAt;
+        }
+    }
+
     private Connection getConnection() throws SQLException {
         return DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
     }
@@ -189,5 +206,56 @@ public class DatabaseDAO {
             System.out.println("Error fetching user stats: " + e.getMessage());
         }
         return null;
+    }
+
+    // --- THÊM HÀM ĐỂ LẤY LỊCH SỬ ĐẤU ---
+    public List<MatchHistory> getMatchHistory(String username) {
+        List<MatchHistory> historyList = new ArrayList<>();
+
+        String sql = "SELECT " +
+                "CASE " +
+                "    WHEN mh.player1_id = u.id THEN u2.username " +
+                "    ELSE u1.username " +
+                "END AS opponent_name, " +
+                "CASE " +
+                "    WHEN mh.player1_id = u.id THEN mh.player1_result " +
+                "    ELSE mh.player2_result " +
+                "END AS my_result, " +
+                "CASE " +
+                "    WHEN mh.player1_id = u.id THEN mh.player1_time_ms " + // time_ms đang lưu số đơn
+                "    ELSE mh.player2_time_ms " +
+                "END AS my_score, " +
+                "CASE " +
+                "    WHEN mh.player1_id = u.id THEN mh.player2_time_ms " +
+                "    ELSE mh.player1_time_ms " +
+                "END AS opponent_score, " +
+                "mh.played_at " +
+                "FROM users u " +
+                "JOIN match_history mh ON (mh.player1_id = u.id OR mh.player2_id = u.id) " +
+                "JOIN users u1 ON mh.player1_id = u1.id " +
+                "JOIN users u2 ON mh.player2_id = u2.id " +
+                "WHERE u.username = ? " +
+                "ORDER BY mh.played_at DESC " +
+                "LIMIT 20"; // Giới hạn 20 trận gần nhất
+
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                historyList.add(new MatchHistory(
+                        rs.getString("opponent_name"),
+                        rs.getString("my_result"),
+                        rs.getLong("my_score"),
+                        rs.getLong("opponent_score"),
+                        rs.getTimestamp("played_at")
+                ));
+            }
+        } catch (SQLException e) {
+            System.out.println("Error fetching match history for " + username + ": " + e.getMessage());
+        }
+        return historyList;
     }
 }

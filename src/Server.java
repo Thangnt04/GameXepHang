@@ -24,6 +24,8 @@ public class Server {
     public void startServer() {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             System.out.println("Server is running and listening on port " + PORT + "...");
+//            System.out.println("Server is running and listening on port " + PORT + "192.168.181.94");
+
 
             while (true) {
                 // Chấp nhận kết nối mới

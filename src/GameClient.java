@@ -1,6 +1,7 @@
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -11,8 +12,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 
 public class GameClient extends JFrame {
@@ -28,6 +31,7 @@ public class GameClient extends JFrame {
     private LoginPanel loginPanel;
     private LobbyPanel lobbyPanel;
     private GamePanel gamePanel;
+    private HistoryPanel historyPanel;
 
     private String username;
 
@@ -43,10 +47,12 @@ public class GameClient extends JFrame {
         loginPanel = new LoginPanel(this);
         lobbyPanel = new LobbyPanel(this);
         gamePanel = new GamePanel(this);
+        historyPanel = new HistoryPanel(this);
 
         mainPanel.add(loginPanel, "LOGIN");
         mainPanel.add(lobbyPanel, "LOBBY");
         mainPanel.add(gamePanel, "GAME");
+        mainPanel.add(historyPanel, "HISTORY");
 
         add(mainPanel);
         cardLayout.show(mainPanel, "LOGIN");
@@ -145,7 +151,7 @@ public class GameClient extends JFrame {
         private JList<String> onlinePlayersList;
         private DefaultListModel<String> playersListModel;
         private JTextArea leaderboardArea;
-        private JButton btnChallenge;
+        private JButton btnChallenge,btnViewHistory;
         private JLabel lblWelcome, lblYourStats;
 
         public LobbyPanel(GameClient client) {
@@ -163,7 +169,7 @@ public class GameClient extends JFrame {
             add(topPanel, BorderLayout.NORTH);
 
             JPanel leftPanel = new JPanel(new BorderLayout());
-            leftPanel.setBorder(new TitledBorder("Người chơi Online"));
+            leftPanel.setBorder(new TitledBorder("Người chơi"));
 
             playersListModel = new DefaultListModel<>();
             onlinePlayersList = new JList<>(playersListModel);
@@ -175,9 +181,17 @@ public class GameClient extends JFrame {
             });
 
             leftPanel.add(new JScrollPane(onlinePlayersList), BorderLayout.CENTER);
+
+            JPanel buttonPanel = new JPanel(new FlowLayout());
             btnChallenge = new JButton("Thách đấu");
             btnChallenge.addActionListener(e -> challengeSelectedPlayer());
-            leftPanel.add(btnChallenge, BorderLayout.SOUTH);
+
+            btnViewHistory = new JButton("Xem lịch sử");
+            btnViewHistory.addActionListener(e -> viewSelectedPlayerHistory());
+
+            buttonPanel.add(btnChallenge);
+            buttonPanel.add(btnViewHistory);
+            leftPanel.add(buttonPanel, BorderLayout.SOUTH);
 
             JPanel rightPanel = new JPanel(new BorderLayout());
             rightPanel.setBorder(new TitledBorder("Bảng xếp hạng"));
@@ -219,7 +233,18 @@ public class GameClient extends JFrame {
             String opponentName = selected.split("\\(")[0];
             client.sendMessageToServer("CHALLENGE:" + opponentName);
         }
+        private void viewSelectedPlayerHistory() {
+            String selected = onlinePlayersList.getSelectedValue();
+            if (selected == null) {
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn người chơi.");
+                return;
+            }
+            String targetUsername = selected.split("\\(")[0];
+            client.sendMessageToServer("GET_HISTORY:" + targetUsername);
+        }
     }
+
+
 
     // --- Lớp GamePanel ---
     class GamePanel extends JPanel implements ActionListener {
@@ -440,6 +465,102 @@ public class GameClient extends JFrame {
         }
     }
 
+    class HistoryPanel extends JPanel implements ActionListener {
+        private GameClient client;
+        private JLabel lblTitle;
+        private JTable historyTable; // THAY ĐỔI: Từ JTextArea sang JTable
+        private DefaultTableModel tableModel; // THAY ĐỔI: Model cho JTable
+        private JButton btnBack;
+        private SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
+
+        public HistoryPanel(GameClient client) {
+            this.client = client;
+            setLayout(new BorderLayout(10, 10));
+            setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            lblTitle = new JLabel("Lịch sử đấu của...", JLabel.CENTER);
+            lblTitle.setFont(new Font("Arial", Font.BOLD, 18));
+            add(lblTitle, BorderLayout.NORTH);
+
+            // --- THAY ĐỔI LOGIC TẠO BẢNG ---
+            // 1. Tạo Model với các cột
+            String[] columnNames = {"Đối thủ", "Kết quả", "Tỷ số (Bạn - Đ/thủ)", "Thời gian"};
+            tableModel = new DefaultTableModel(columnNames, 0) {
+                // Ghi đè phương thức để ngăn người dùng chỉnh sửa ô
+                @Override
+                public boolean isCellEditable(int row, int column) {
+                    return false;
+                }
+            };
+
+            // 2. Tạo JTable từ Model
+            historyTable = new JTable(tableModel);
+            historyTable.setFont(new Font("Arial", Font.PLAIN, 12));
+            historyTable.setFillsViewportHeight(true); // Cho phép bảng lấp đầy chiều cao
+            historyTable.setRowHeight(20); // Tăng chiều cao hàng một chút
+
+            // 3. Tùy chỉnh độ rộng cột (tùy chọn nhưng nên làm)
+            historyTable.getColumnModel().getColumn(0).setPreferredWidth(150); // Đối thủ
+            historyTable.getColumnModel().getColumn(1).setPreferredWidth(70);  // Kết quả
+            historyTable.getColumnModel().getColumn(2).setPreferredWidth(130); // Tỷ số
+            historyTable.getColumnModel().getColumn(3).setPreferredWidth(120); // Thời gian
+
+            // 4. Thêm JTable vào JScrollPane (thay vì JTextArea)
+            add(new JScrollPane(historyTable), BorderLayout.CENTER);
+            // --- KẾT THÚC THAY ĐỔI LOGIC TẠO BẢNG ---
+
+            btnBack = new JButton("Quay lại Sảnh");
+            btnBack.addActionListener(this);
+            add(btnBack, BorderLayout.SOUTH);
+        }
+
+        public void displayHistory(String targetUsername, String data) {
+            lblTitle.setText("Lịch sử đấu của: " + targetUsername);
+
+            // 1. Xóa tất cả hàng cũ khỏi bảng
+            tableModel.setRowCount(0);
+
+            if (data == null || data.isEmpty()) {
+                // Nếu không có dữ liệu, bảng sẽ trống (tốt hơn là hiển thị text)
+                return;
+            }
+
+            // --- THAY ĐỔI LOGIC HIỂN THỊ DỮ LIỆU ---
+            // Format: opponent1,WIN,5,2,date1;;opponent2,LOSS,1,5,date2
+            String[] matches = data.split(";;");
+
+            for (String match : matches) {
+                String[] parts = match.split(",");
+                if (parts.length < 5) continue;
+
+                String opponent = parts[0];
+                String result = parts[1];
+                String myScore = parts[2];
+                String opponentScore = parts[3];
+                Date date = new Date(Long.parseLong(parts[4]));
+
+                // Tạo một mảng Object cho hàng mới
+                Object[] rowData = {
+                        opponent,
+                        result,
+                        myScore + " - " + opponentScore, // Hiển thị tỷ số
+                        sdf.format(date)
+                };
+
+                // Thêm hàng mới vào model, JTable sẽ tự động cập nhật
+                tableModel.addRow(rowData);
+            }
+            // --- KẾT THÚC THAY ĐỔI LOGIC HIỂN THỊ ---
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (e.getSource() == btnBack) {
+                client.showPanel("LOBBY");
+            }
+        }
+    }
+
     class ServerListener implements Runnable {
         @Override
         public void run() {
@@ -559,9 +680,19 @@ public class GameClient extends JFrame {
                     JOptionPane.showMessageDialog(gamePanel, data, "Trận đấu kết thúc", JOptionPane.INFORMATION_MESSAGE);
                     showPanel("LOBBY");
                     break;
+                case "HISTORY_DATA":
+                    // Format: targetUsername:opponent1,WIN,5,2,date1;;...
+                    String[] historyParts = data.split(":", 2);
+                    String targetUsername = historyParts[0];
+                    String historyData = (historyParts.length > 1) ? historyParts[1] : "";
+
+                    historyPanel.displayHistory(targetUsername, historyData);
+                    showPanel("HISTORY");
+                    break;
             }
         }
     }
+
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {

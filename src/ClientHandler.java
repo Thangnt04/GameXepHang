@@ -4,6 +4,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.List;
 
 public class ClientHandler implements Runnable {
 
@@ -103,6 +104,11 @@ public class ClientHandler implements Runnable {
                 }
                 break;
             // (LOGOUT sẽ được xử lý khi client đóng socket)
+            case "GET_HISTORY":
+                // parts[1] là username của người cần xem
+                String targetUsername = parts[1];
+                handleGetHistory(targetUsername);
+                break;
         }
     }
 
@@ -192,6 +198,30 @@ public class ClientHandler implements Runnable {
         } catch (IOException e) {
             System.out.println("Error during cleanup for " + username + ": " + e.getMessage());
         }
+    }
+
+    private void handleGetHistory(String targetUsername) {
+        List<DatabaseDAO.MatchHistory> historyList = databaseDAO.getMatchHistory(targetUsername);
+
+        // Format: HISTORY_DATA:targetUsername:opponent1,WIN,5,2,date1;;opponent2,LOSS,1,5,date2;;...
+        StringBuilder historyData = new StringBuilder("HISTORY_DATA:");
+        historyData.append(targetUsername).append(":"); // Thêm tên người bị xem
+
+        for (DatabaseDAO.MatchHistory match : historyList) {
+            historyData.append(match.opponentName).append(",");
+            historyData.append(match.myResult).append(",");
+            historyData.append(match.myScore).append(",");
+            historyData.append(match.opponentScore).append(",");
+            historyData.append(match.playedAt.getTime()); // Gửi dạng mili-giây
+            historyData.append(";;"); // Phân cách các trận đấu
+        }
+
+        // Xóa dấu ;; cuối cùng nếu có
+        if (historyList.size() > 0) {
+            historyData.setLength(historyData.length() - 2);
+        }
+
+        sendMessage(historyData.toString());
     }
 
     // Getters
