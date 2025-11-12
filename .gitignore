@@ -39,8 +39,8 @@ Thumbs.db
 Desktop.ini
 
 # Sensitive information
-src/repositories/UserRepository.java
-src/repositories/MatchRepository.java
+# Lưu ý: KHÔNG ignore các file repository để code có thể được commit.
+# Nếu cần bảo mật, hãy cấu hình DatabaseConfig qua biến môi trường hoặc file .properties riêng.
 
 # Temporary files
 *.tmp
