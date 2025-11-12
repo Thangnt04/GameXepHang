@@ -6,7 +6,6 @@ import repositories.UserRepository;
 import java.util.List;
 import java.util.Map;
 
-//Ghép dữ liệu hiển thị online + leaderboard.
 public class LobbyService {
     private UserRepository userRepository;
 
@@ -14,8 +13,7 @@ public class LobbyService {
         this.userRepository = userRepository;
     }
 
-    // Gửi danh sách người chơi (trạng thái ONLINE/OFFLINE và BUSY/IDLE) tới tất cả client
-    public void broadcastOnlineList(Map<String, ClientController> onlineUsers, 
+    public void broadcastOnlineList(Map<String, ClientController> onlineUsers,
                                     Map<String, GameSessionController> sessionsByUser) {
         StringBuilder userListMessage = new StringBuilder("ONLINE_LIST:");
         try {
@@ -67,7 +65,6 @@ public class LobbyService {
                 }
             }
         }
-
         if (userListMessage.length() > "ONLINE_LIST:".length()) {
             userListMessage.deleteCharAt(userListMessage.length() - 1);
         }
@@ -77,19 +74,24 @@ public class LobbyService {
         }
     }
 
-    // Gửi bảng xếp hạng (điểm = 3*wins + draws) tới tất cả client
     public void broadcastLeaderboard(Map<String, ClientController> onlineUsers) {
         List<UserRepository.User> leaderboard = userRepository.getLeaderboard();
         StringBuilder leaderboardMessage = new StringBuilder("LEADERBOARD:");
         int rank = 1;
         for (UserRepository.User user : leaderboard) {
-            leaderboardMessage.append(rank++).append(". ")
-                    .append(user.username)
-                    .append(" (").append(user.getPoints()).append(" pts")
-                    .append(" | ").append(user.totalWins).append("W-")
-                    .append(user.totalDraws).append("D-")
-                    .append(user.totalLosses).append("L)");
-            leaderboardMessage.append(";;");
+            // Chỉnh sửa để phù hợp với định dạng: Hạng|Tên|Điểm|Thắng|Hòa|Thua
+            leaderboardMessage.append(rank++).append("|") // Hạng
+                    .append(user.username).append("|")     // Tên
+                    .append(user.getPoints()).append("|")  // Điểm
+                    .append(user.totalWins).append("|")    // Thắng
+                    .append(user.totalDraws).append("|")   // Hòa
+                    .append(user.totalLosses);             // Thua
+            leaderboardMessage.append(";;"); // Ký tự phân tách giữa các dòng (row)
+        }
+
+        // Gỡ ký tự ";;" cuối cùng nếu danh sách không rỗng
+        if (leaderboardMessage.length() > "LEADERBOARD:".length()) {
+            leaderboardMessage.setLength(leaderboardMessage.length() - 2);
         }
 
         for (ClientController handler : onlineUsers.values()) {

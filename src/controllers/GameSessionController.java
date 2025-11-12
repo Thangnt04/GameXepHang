@@ -152,6 +152,7 @@ public class GameSessionController {
             player.sendMessage("UPDATE_PROGRESS:" + currentProgress);
             opponent.sendMessage("OPPONENT_PROGRESS:" + currentProgress);
 
+            //Nếu làm xong đủ số đơn -> Win
             if (currentProgress == MatchModel.getNumOrdersPerMatch()) {
                 System.out.println(player.getUsername() + " finished 5/5.");
                 forceEndMatch();

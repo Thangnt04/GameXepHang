@@ -12,7 +12,7 @@ import java.net.Socket;
 
 // Ứng dụng Swing client, socket đến server, điều hướng view.
 public class GameClientController extends JFrame {
-    private static final String SERVER_ADDRESS = "127.0.0.1";
+    private static final String SERVER_ADDRESS = "26.93.209.193";
     private static final int SERVER_PORT = 12345;
 
     private Socket socket;
