@@ -1,9 +1,6 @@
 package repositories;
 
-/**
- * Cấu hình kết nối Database
- * LƯU Ý: Đổi thông tin này theo môi trường của bạn
- */
+
 public class DatabaseConfig {
     public static final String DB_URL = "jdbc:mysql://localhost:3306/gamexephang";
     public static final String DB_USER = "root";

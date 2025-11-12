@@ -10,6 +10,7 @@ import java.net.Socket;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+//Quản lý vòng đời server, online list, thách đấu, kết thúc trận.
 public class ServerController {
     private static final int PORT = 12345;
     private Map<String, ClientController> onlineUsers = new ConcurrentHashMap<>();
@@ -44,6 +45,7 @@ public class ServerController {
         }
     }
 
+    // Đăng ký người dùng vừa đăng nhập vào danh sách online
     public void userLoggedIn(String username, ClientController controller) {
         onlineUsers.put(username, controller);
         System.out.println(username + " just logged in.");
@@ -51,6 +53,7 @@ public class ServerController {
         lobbyService.broadcastLeaderboard(onlineUsers);
     }
 
+    // Xử lý người dùng rời khỏi hệ thống
     public void userLoggedOut(String username) {
         if (username != null) {
             ClientController leaving = onlineUsers.remove(username);
@@ -81,6 +84,7 @@ public class ServerController {
         }
     }
 
+    // Xử lý yêu cầu thách đấu của A tới B
     public synchronized void handleChallenge(String challengerName, String opponentName) {
         ClientController opponent = onlineUsers.get(opponentName);
         ClientController challenger = onlineUsers.get(challengerName);
@@ -106,6 +110,7 @@ public class ServerController {
         challenger.sendMessage("SERVER_MSG:Đã gửi lời mời tới '" + opponentName + "'. Đang chờ phản hồi...");
     }
 
+    // Xử lý phản hồi thách đấu (chấp nhận/từ chối)
     public synchronized void handleChallengeResponse(String challengerName, String opponentName, boolean accepted) {
         ClientController challenger = onlineUsers.get(challengerName);
         ClientController opponent = onlineUsers.get(opponentName);
@@ -139,6 +144,7 @@ public class ServerController {
         }
     }
 
+    // Thu dọn trạng thái sau khi một game session kết thúc
     public synchronized void gameSessionEnded(GameSessionController session) {
         try {
             ClientController p1 = session.getPlayer1();
@@ -161,18 +167,22 @@ public class ServerController {
         }
     }
 
+    // Kiểm tra người dùng có đang online hay không
     public boolean isUserOnline(String username) {
         return onlineUsers.containsKey(username);
     }
 
+    // Truy cập UserRepository dùng cho nơi khác
     public UserRepository getUserRepository() {
         return userRepository;
     }
 
+    // Truy cập MatchRepository dùng cho nơi khác
     public MatchRepository getMatchRepository() {
         return matchRepository;
     }
 
+    // Điểm vào chương trình server
     public static void main(String[] args) {
         ServerController server = new ServerController();
         server.startServer();

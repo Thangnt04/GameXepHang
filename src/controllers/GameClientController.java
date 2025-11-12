@@ -10,6 +10,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 
+// Ứng dụng Swing client, socket đến server, điều hướng view.
 public class GameClientController extends JFrame {
     private static final String SERVER_ADDRESS = "127.0.0.1";
     private static final int SERVER_PORT = 12345;
@@ -69,6 +70,7 @@ public class GameClientController extends JFrame {
         new Thread(new ServerListener()).start();
     }
 
+    // Gửi lệnh/Thông điệp lên server
     public void sendMessageToServer(String message) {
         if (out != null) {
             System.out.println("Sending to Server: " + message);
@@ -76,12 +78,14 @@ public class GameClientController extends JFrame {
         }
     }
 
+    // Chuyển trang giao diện theo tên panel
     public void showPanel(String panelName) {
         cardLayout.show(mainPanel, panelName);
     }
 
     class ServerListener implements Runnable {
         @Override
+        // Vòng lặp đọc thông điệp từ server
         public void run() {
             String serverMessage;
             try {
@@ -97,6 +101,8 @@ public class GameClientController extends JFrame {
             }
         }
 
+        // Phân tích và áp dụng thông điệp server vào UI/State
+        // Cập nhật view tương ứng theo từng COMMAND
         private void processServerMessage(String message) {
             String[] parts = message.split(":", 2);
             String command = parts[0];
@@ -199,6 +205,7 @@ public class GameClientController extends JFrame {
         }
     }
 
+    // Điểm vào ứng dụng client (Swing)
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             GameClientController client = new GameClientController();

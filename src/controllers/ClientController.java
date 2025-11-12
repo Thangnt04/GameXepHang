@@ -11,6 +11,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.List;
 
+// Luồng server-side cho từng người chơi, đọc/gửi lệnh.
 public class ClientController implements Runnable {
     private Socket clientSocket;
     private ServerController server;
@@ -37,6 +38,7 @@ public class ClientController implements Runnable {
     }
 
     @Override
+    // Vòng lặp nhận dữ liệu từ client qua socket
     public void run() {
         String clientMessage;
         try {
@@ -53,6 +55,7 @@ public class ClientController implements Runnable {
         }
     }
 
+    //Phân tích và route lệnh từ client
     private void processMessage(String message) {
         String[] parts = message.split(":", 2);
         String command = parts[0];
@@ -100,6 +103,7 @@ public class ClientController implements Runnable {
         }
     }
 
+    // Xử lý đăng nhập
     private void handleLogin(String credentials) {
         String[] parts = credentials.split(":");
         if (parts.length != 2) return;
@@ -119,6 +123,7 @@ public class ClientController implements Runnable {
         }
     }
 
+    // Xử lý đăng ký tài khoản
     private void handleRegister(String credentials) {
         String[] parts = credentials.split(":");
         if (parts.length != 2) return;
@@ -130,6 +135,7 @@ public class ClientController implements Runnable {
         }
     }
 
+    // Lấy lịch sử đấu của một người dùng
     private void handleGetHistory(String targetUsername) {
         List<MatchRepository.MatchHistory> historyList = matchRepository.getMatchHistory(targetUsername);
         StringBuilder historyData = new StringBuilder("HISTORY_DATA:");
@@ -150,6 +156,7 @@ public class ClientController implements Runnable {
         sendMessage(historyData.toString());
     }
 
+    // Gửi thông điệp về phía client
     public void sendMessage(String message) {
         if (out != null && isConnected) {
             try {
@@ -165,6 +172,7 @@ public class ClientController implements Runnable {
         }
     }
 
+    // Thu dọn tài nguyên và trạng thái khi client ngắt kết nối
     private void cleanup() {
         isConnected = false;
         try {
@@ -188,11 +196,13 @@ public class ClientController implements Runnable {
         }
     }
 
+    // Getter nhanh cho thông tin phiên người dùng
     public String getUsername() { return session != null ? session.getUsername() : null; }
     public int getUserId() { return session != null ? session.getUserId() : -1; }
     public ClientSession getSession() { return session; }
     public boolean isInGame() { return session != null && session.isInGame(); }
 
+    // Đặt trạng thái vào/ra trận và liên kết GameSession hiện tại
     public void setInGame(boolean inGame, GameSessionController gameSession) {
         if (session != null) {
             session.setInGame(inGame);

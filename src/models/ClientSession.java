@@ -1,5 +1,6 @@
 package models;
 
+//Trạng thái phiên đăng nhập trên server.
 public class ClientSession {
     private String username;
     private int userId;

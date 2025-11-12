@@ -7,6 +7,7 @@ import repositories.UserRepository;
 import java.util.Timer;
 import java.util.TimerTask;
 
+// Điều phối trận đấu, timer, kết quả, chơi lại/thoát/bỏ cuộc.
 public class GameSessionController {
     private ClientController player1;
     private ClientController player2;
@@ -30,6 +31,7 @@ public class GameSessionController {
         System.out.println("Creating GameSession for: " + p1.getUsername() + " and " + p2.getUsername());
     }
 
+    // Bắt đầu một trận đấu mới giữa hai người chơi
     public synchronized void startMatch() {
         matchModel.reset();
         gameService.generateOrders(matchModel);
@@ -49,6 +51,7 @@ public class GameSessionController {
         startMatchTimer();
     }
 
+    // Gửi đơn hàng/kệ tương ứng cho một người chơi
     private void sendNewOrderToPlayer(ClientController player, int orderIndex) {
         if (orderIndex >= MatchModel.getNumOrdersPerMatch()) return;
 
@@ -58,6 +61,7 @@ public class GameSessionController {
         player.sendMessage(String.format("NEW_ORDER:%d:%s:%s", orderIndex, orderCsv, shelfCsv));
     }
 
+    // Khởi tạo bộ đếm thời gian trận
     private void startMatchTimer() {
         if (matchTimer != null) matchTimer.cancel();
         matchTimer = new Timer();
@@ -69,6 +73,7 @@ public class GameSessionController {
         }, MatchModel.getMatchTimeSeconds() * 1000 + 1000);
     }
 
+    // kết thúc trận khi hết giờ hoặc cần finalize
     private synchronized void forceEndMatch() {
         if (matchModel.isMatchEnded()) return;
         matchModel.setMatchEnded(true);
@@ -111,6 +116,7 @@ public class GameSessionController {
         player2.sendMessage(String.format("ROUND_RESULT:%s:%s (%d/5)", p2Result, p2Msg, p2Progress));
     }
 
+    // Đồng bộ thống kê thắng/thua/hòa mới nhất từ DB vào phiên client
     private void updateLocalStats() {
         UserRepository.User p1Stats = server.getUserRepository().getUserStats(player1.getUsername());
         UserRepository.User p2Stats = server.getUserRepository().getUserStats(player2.getUsername());
@@ -118,6 +124,7 @@ public class GameSessionController {
         if (p2Stats != null) player2.getSession().updateStats(p2Stats.totalWins, p2Stats.totalDraws, p2Stats.totalLosses);
     }
 
+    // Xử lý nộp kết quả đơn hàng của một người chơi
     public synchronized void receivePlayerSubmission(ClientController player, String submissionCsv) {
         if (matchModel.isMatchEnded()) return;
 
@@ -156,6 +163,7 @@ public class GameSessionController {
         }
     }
 
+    // Xử lý yêu cầu chơi lại sau khi kết thúc một vòng
     public synchronized void playerWantsToPlayAgain(ClientController player) {
         if (player == player1) {
             matchModel.setPlayer1WantsToPlayAgain(true);
@@ -175,6 +183,7 @@ public class GameSessionController {
         }
     }
 
+    // Xử lý trường hợp người chơi bỏ cuộc giữa chừng
     public synchronized void playerForfeited(ClientController forfeitingPlayer) {
         if (matchModel.isMatchEnded() || sessionEnded) return;
 
@@ -219,6 +228,7 @@ public class GameSessionController {
         server.gameSessionEnded(this);
     }
 
+    // Xử lý người chơi rời trận
     public synchronized void playerExited(ClientController player) {
         if (sessionEnded) return;
         sessionEnded = true;
@@ -238,6 +248,7 @@ public class GameSessionController {
         server.gameSessionEnded(this);
     }
 
+    // Getter cho hai người chơi trong phiên
     public ClientController getPlayer1() { return player1; }
     public ClientController getPlayer2() { return player2; }
 }

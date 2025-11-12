@@ -3,6 +3,7 @@ package services;
 import models.MatchModel;
 import java.util.*;
 
+//Logic trò chơi: sinh đơn, kiểm tra, tính kết quả.
 public class GameSessionService {
     private static final String[] ALL_ITEMS = {
         "Táo", "Chuối", "Cam", "Nho", "Sữa", "Bánh Mì", "Trứng", "Phô Mai", "Thịt Gà", "Cá"
@@ -27,10 +28,12 @@ public class GameSessionService {
         }
     }
 
+    // Kiểm tra đơn người chơi gửi có đúng thứ tự yêu cầu không
     public boolean validateSubmission(String submissionCsv, String correctOrderCsv) {
         return correctOrderCsv.equals(submissionCsv);
     }
 
+    // Tính kết quả trận dựa vào tiến độ và việc hoàn thành đủ đơn
     public String calculateMatchResult(int p1Progress, int p2Progress, boolean p1Finished, boolean p2Finished) {
         if (p1Finished && !p2Finished) return "P1_WIN";
         if (!p1Finished && p2Finished) return "P2_WIN";

@@ -6,6 +6,7 @@ import repositories.UserRepository;
 import java.util.List;
 import java.util.Map;
 
+//Ghép dữ liệu hiển thị online + leaderboard.
 public class LobbyService {
     private UserRepository userRepository;
 
@@ -13,6 +14,7 @@ public class LobbyService {
         this.userRepository = userRepository;
     }
 
+    // Gửi danh sách người chơi (trạng thái ONLINE/OFFLINE và BUSY/IDLE) tới tất cả client
     public void broadcastOnlineList(Map<String, ClientController> onlineUsers, 
                                     Map<String, GameSessionController> sessionsByUser) {
         StringBuilder userListMessage = new StringBuilder("ONLINE_LIST:");
@@ -75,6 +77,7 @@ public class LobbyService {
         }
     }
 
+    // Gửi bảng xếp hạng (điểm = 3*wins + draws) tới tất cả client
     public void broadcastLeaderboard(Map<String, ClientController> onlineUsers) {
         List<UserRepository.User> leaderboard = userRepository.getLeaderboard();
         StringBuilder leaderboardMessage = new StringBuilder("LEADERBOARD:");
