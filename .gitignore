@@ -1,0 +1,46 @@
+# Compiled class files
+*.class
+bin/
+out/
+build/
+target/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Log files
+*.log
+
+# Database
+*.db
+
+# Backup files
+src/backup/
+*.bak
+*~
+
+# OS generated files
+Thumbs.db
+Desktop.ini
+
+# Sensitive information
+src/repositories/UserRepository.java
+src/repositories/MatchRepository.java
+
+# Temporary files
+*.tmp
